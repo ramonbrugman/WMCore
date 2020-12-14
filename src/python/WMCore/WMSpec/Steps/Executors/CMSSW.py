@@ -83,7 +83,7 @@ class CMSSW(Executor):
             self.stepSpace.getFromSandbox("pileupconf.json")
 
         # add in ths scram env PSet manip script whatever happens
-        self.step.runtime.scramPreScripts.append("SetupCMSSWPset")
+        self.step.runtime.preScripts.append("SetupCMSSWPset")
         return None
 
     def execute(self, emulator=None):

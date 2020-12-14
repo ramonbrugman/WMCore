@@ -377,13 +377,12 @@ def decomposeConfigSection(csect):
     return decomposer.parameters
 
 
-def makeTaskTweak(stepSection):
+def makeTaskTweak(stepSection, result):
     """
     _makeTaskTweak_
 
     Create a tweak for options in the task that apply to all jobs.
     """
-    result = PSetTweak()
 
     # GlobalTag
     if hasattr(stepSection, "application"):
@@ -395,17 +394,16 @@ def makeTaskTweak(stepSection):
                 if 'globalTagTransaction' in args:
                     result.addParameter("process.GlobalTag.DBParameters.transactionId", args['globalTagTransaction'])
 
-    return result
+    return
 
 
-def makeJobTweak(job):
+def makeJobTweak(job, result):
     """
     _makeJobTweak_
 
     Convert information from a WMBS Job object into a PSetTweak
     that can be used to modify a CMSSW process.
     """
-    result = PSetTweak()
     baggage = job.getBaggage()
 
     # Check in the baggage if we are processing .lhe files
@@ -501,10 +499,10 @@ def makeJobTweak(job):
     for k, v in viewitems(baggageParams):
         result.addParameter(k, v)
 
-    return result
+    return
 
 
-def makeOutputTweak(outMod, job):
+def makeOutputTweak(outMod, job, result):
     """
     _makeOutputTweak_
 
@@ -526,7 +524,7 @@ def makeOutputTweak(outMod, job):
     # TODO: Nice standard way to meddle with the other parameters in the
     #      output module based on the settings in the section
 
-    return result
+    return
 
 
 def readAdValues(attrs, adname, castInt=False):
