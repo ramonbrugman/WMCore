@@ -72,8 +72,9 @@ class SetupCMSSWPset(ScriptInterface):
         self.jobBag = None
         self.logger = logging.getLogger()
         self.tweak = PSetTweak()
-        self.scram = self.createScramEnv()
-        self.configPickle = getattr(self.step.data.application.command, "configurationPickle", "PSet.pkl")
+        self.scram = None
+        self.configPickle = "Pset.pkl"
+        self.psetFile = None
 
     def fixupGlobalTag(self):
         """
@@ -85,8 +86,7 @@ class SetupCMSSWPset(ScriptInterface):
 
         """
         if hasattr(self.process, "GlobalTag"):
-            if not hasattr(self.process.GlobalTag, "globaltag"):
-                self.tweak.addParameter("process.GlobalTag.globaltag", "")
+            self.tweak.addParameter("process.GlobalTag.globaltag", "customTypeCms.string('')")
         return
 
 
@@ -102,8 +102,7 @@ class SetupCMSSWPset(ScriptInterface):
 
         """
         if hasattr(self.process, "GlobalTag"):
-            if not hasattr(self.process.GlobalTag.DBParameters, "transactionId"):
-                self.tweak.addParameter("process.GlobalTag.DBParameters.transactionId", "")
+            self.tweak.addParameter("process.GlobalTag.DBParameters.transactionId", "customTypeCms.untracked.string('')")
         return
 
 
@@ -114,8 +113,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a firstRun parameter.
 
         """
-        if not hasattr(self.process.source, "firstRun"):
-            self.tweak.addParameter("process.source.firstRun", 0)
+        self.tweak.addParameter("process.source.firstRun", "customTypeCms.untracked.uint32(0)")
         return
 
 
@@ -126,9 +124,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a lastRun parameter.
 
         """
-        if not hasattr(self.process.source, "lastRun"):
-            self.tweak.addParameter("process.source.lastRun", 0)
-
+        self.tweak.addParameter("process.source.lastRun", "customTypeCms.untracked.uint32(0)")
         return
 
     def fixupLumisToProcess(self):
@@ -138,9 +134,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a lumisToProcess parameter.
 
         """
-        if not hasattr(self.process.source, "lumisToProcess"):
-            self.tweak.addParameter("process.source.lumisToProcess", [])
-
+        self.tweak.addParameter("process.source.lumisToProcess", "customTypeCms.untracked.VLuminosityBlockRange()")
         return
 
 
@@ -151,9 +145,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a skip events parameter.
 
         """
-        if not hasattr(self.process.source, "skipEvents"):
-            self.tweak.addParameter("process.source.skipEvents", 0)
-
+        self.tweak.addParameter("process.source.skipEvents", "customTypeCms.untracked.uint32(0)")
         return
 
 
@@ -164,8 +156,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a first event parameter.
 
         """
-        if not hasattr(self.process.source, "firstEvent"):
-            self.tweak.addParameter("process.source.firstEvent", 0)
+        self.tweak.addParameter("process.source.firstEvent", "customTypeCms.untracked.uint32(0)")
         return
 
 
@@ -176,8 +167,10 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a max events parameter.
 
         """
-        if not hasattr(self.process, "maxEvents") or not hasattr(self.process.maxEvents, "input"):
-            self.tweak.addParameter("process.maxEvents.input", -1)
+        tweak = PSetTweak()
+        tweak.addParameter("process.maxEvents", "customTypeCms.untracked.PSet(input=cms.untracked.int32(-1))")
+        self.applyPsetTweak(tweak, skipIfSet=True)
+        self.tweak.addParameter("process.maxEvents.input", "customTypeCms.untracked.int32(-1)")
 
         return
 
@@ -188,8 +181,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a fileNames parameter.
 
         """
-        if not hasattr(self.process.source, "fileNames"):
-            self.tweak.addParameter("process.source.fileNames", [])
+        self.tweak.addParameter("process.source.fileNames", "customTypeCms.untracked.vstring()")
 
         return
 
@@ -200,9 +192,7 @@ class SetupCMSSWPset(ScriptInterface):
         Make sure that the process has a secondaryFileNames parameter.
 
         """
-        if not hasattr(self.process.source, "secondaryFileNames"):
-            self.tweak.addParameter("process.source.secondaryFileNames", [])
-
+        self.tweak.addParameter("process.source.secondaryFileNames", "customTypeCms.untracked.vstring()")
         return
 
 
@@ -212,17 +202,15 @@ class SetupCMSSWPset(ScriptInterface):
 
         Make sure that the process has firstLuminosityBlock parameter.
         """
-        if not hasattr(self.process.source, "firstLuminosityBlock"):
-            self.tweak.addParameter("process.source.firstLuminosityBlock", 1)
-
+        self.tweak.addParameter("process.source.firstLuminosityBlock", "customTypeCms.untracked.uint32(1)")
         return
 
     def createScramEnv(self):
         scram = Scram(
             version=self.getCmsswVersion(),
-            directory=self.step.builder.workingDir,
+            directory=self.stepSpace.location,
             architecture=self.getScramVersion(),
-            initialise=self.step.application.setup.softwareEnvironment
+            initialise=self.step.data.application.setup.softwareEnvironment
         )
         scram.project() # creates project area
         scram.runtime() # creates runtime environment
@@ -230,11 +218,16 @@ class SetupCMSSWPset(ScriptInterface):
         return scram
 
     def scramRun(self, cmdArgs):
-        retval = self.scram(command=cmdArgs)
-        if retval > 0:
-            msg = "Error running scram process. Error code: %s" % (retval)
-            logging.error(msg)
-            raise RuntimeError(msg)
+        if self.scram:
+            retval = self.scram(command=cmdArgs)
+            if retval > 0:
+                msg = "Error running scram process. Error code: %s" % (retval)
+                logging.error(msg)
+                #logging.error(self.scram.stdout)
+                #logging.error(self.scram.stderr)
+                raise RuntimeError(msg)
+        else:
+            raise RuntimeError("Scram is not defined")
         
     def createProcess(self, scenario, funcName, funcArgs):
         """
@@ -249,10 +242,9 @@ class SetupCMSSWPset(ScriptInterface):
         # procScript = "cmssw_wm_create_process.py"
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_wm_create_process.py")
 
-        workingDir = self.stepSpace.location
         processDic = {"scenario": scenario}
-        processJson = os.path.join(workingDir, "process_scenario.json")
-        funcArgsJson = os.path.join(workingDir, "process_funcArgs.json")
+        processJson = os.path.join(self.stepSpace.location, "process_scenario.json")
+        funcArgsJson = os.path.join(self.stepSpace.location, "process_funcArgs.json")
 
         if funcName == "merge" or funcName == "repack":
             try:
@@ -273,7 +265,7 @@ class SetupCMSSWPset(ScriptInterface):
 
         self.scramRun("%s --output_pkl %s --funcname %s --funcargs %s" % (
             procScript,
-            os.path.join(workingDir, "PSet.pkl"),
+            os.path.join(self.stepSpace.location, self.configPickle),
             funcName,
             funcArgsParam))
 
@@ -288,9 +280,18 @@ class SetupCMSSWPset(ScriptInterface):
         handled externally.
 
         """
-        psetFile = self.configPickle
+        self.logger.info("Working dir: %s" % os.getcwd())
+        # Pickle original pset configuration
+        procScript = os.path.join("/tmpscratch/users/khurtado/work/dec17/psettweakmigration/stepChain/job/PSetTweaks/", "edm_pset_pickler.py")
+        pset = os.path.join(self.stepSpace.location, self.psetFile)
+        cmd = "%s --input %s --output_pkl %s" % (
+            procScript,
+            os.path.join(self.stepSpace.location, self.psetFile),
+            os.path.join(self.stepSpace.location, self.configPickle))
+        self.scramRun(cmd)
+
         try:
-            with open(psetFile, 'rb') as f:
+            with open(os.path.join(self.stepSpace.location, self.configPickle), 'rb') as f:
                 self.process = Unpickler(f).load()
         except ImportError as ex:
             msg = "Unable to import pset from %s:\n" % psetFile
@@ -304,16 +305,23 @@ class SetupCMSSWPset(ScriptInterface):
         # @TODO: Get rid of this as soon as we are sure cmssw-wm-tools can be found
         # in all CMSSW release environments.
         # procScript = "edm_pset_tweak.py"
-        procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "edm_pset_tweak.py")
-        workingDir = self.stepSpace.location
-        psetTweakJson = os.path.join(workingDir, "PSetTweak.json")
-        psetTweak.persist(psetTweakJson, formatting='json')
+        #procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "edm_pset_tweak.py")
+        procScript = os.path.join("/tmpscratch/users/khurtado/work/dec17/psettweakmigration/stepChain/job/PSetTweaks/", "edm_pset_tweak.py")
+        psetTweakJson = os.path.join(self.stepSpace.location, "PSetTweak.json")
+        psetTweak.persist(psetTweakJson, formatting='simplejson')
 
         cmd = "%s --input_pkl %s --output_pkl %s --json %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle,
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle),
             psetTweakJson)
+        if skipIfSet:
+            cmd += " --skip_if_set"
+        if allowFailedTweaks:
+            cmd += " --allow_failed_tweaks"
+
+        self.scramRun(cmd)
+        return
 
     def handleSeeding(self):
         """
@@ -322,9 +330,8 @@ class SetupCMSSWPset(ScriptInterface):
         Handle Random Seed settings for the job
         """
         stepName = self.step.data._internal_name
-        workingDir = self.stepSpace.location
         seeding = getattr(self.jobBag, "seeding", None)
-        seedJson = os.path.join(workingDir, "reproducible_seed.json") 
+        seedJson = os.path.join(self.stepSpace.location, "reproducible_seed.json") 
         self.logger.info("Job seeding set to: %s", seeding)
             
         # @TODO: Get rid of this as soon as we are sure cmssw-wm-tools can be found
@@ -334,8 +341,8 @@ class SetupCMSSWPset(ScriptInterface):
 
         cmd = "%s --input_pkl %s --output_pkl %s --seeding %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle,
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle),
             seeding)
 
         if seeding == "ReproducibleSeeding":
@@ -379,8 +386,11 @@ class SetupCMSSWPset(ScriptInterface):
                 "Resizing a job with nStreams != nCores. Setting nStreams = nCores. This may end badly.")
             eventStreams = 0
 
-        self.tweak.addParameter("process.options.numberOfThreads", numCores)
-        self.tweak.addParameter("process.options.numberOfStreams", eventStreams)
+        tweak = PSetTweak()
+        tweak.addParameter("process.options", "customTypeCms.untracked.PSet()")
+        self.applyPsetTweak(tweak, skipIfSet=True)
+        self.tweak.addParameter("process.options.numberOfThreads", "customTypeCms.untracked.uint32(%s)" % numCores)
+        self.tweak.addParameter("process.options.numberOfStreams", "customTypeCms.untracked.uint32(%s)" % eventStreams)
 
         return
 
@@ -431,16 +441,15 @@ class SetupCMSSWPset(ScriptInterface):
         # in all CMSSW release environments.
         # procScript = "cmssw_handle_pileup.py"
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_handle_pileup.py")
-        workingDir = self.stepSpace.location
-        jsonPileupConfig = os.path.join(workingDir, "pileupconf.json")
+        jsonPileupConfig = os.path.join(self.stepSpace.location, "pileupconf.json")
 
         cmd = "%s --input_pkl %s --output_pkl %s --pileup_dict %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle,
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle),
             jsonPileupConfig)
 
-        if self.jobBag.skipPileupEvents:
+        if getattr(self.jobBag, "skipPileupEvents", None):
             randomSeed = self.job['task']
             cmd += "--skip_pileup_events --random_seed %s" %(randomSeed)
         self.scramRun(cmd)
@@ -479,12 +488,11 @@ class SetupCMSSWPset(ScriptInterface):
         # in all CMSSW release environments.
         # procScript = "cmssw_handle_dqm_filesaver.py"
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_handle_dqm_filesaver.py")
-        workingDir = self.stepSpace.location
 
         cmd = "%s --input_pkl %s --output_pkl %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle)
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle))
 
         if hasattr(self.step.data.application.configuration, "pickledarguments"):
             args = pickle.loads(self.step.data.application.configuration.pickledarguments)
@@ -535,8 +543,8 @@ class SetupCMSSWPset(ScriptInterface):
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_enable_lazy_download.py")
         cmd = "%s --input_pkl %s --output_pkl %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle)
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle))
         self.scramRun(cmd)
 
         return
@@ -590,8 +598,8 @@ class SetupCMSSWPset(ScriptInterface):
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_handle_condor_status_service.py")
         cmd = "%s --input_pkl %s --output_pkl %s --name %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle,
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle),
             self.step.data._internal_name)
         self.scramRun(cmd)
 
@@ -634,9 +642,9 @@ class SetupCMSSWPset(ScriptInterface):
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_enforce_guid_in_filename.py")
         cmd = "%s --input_pkl %s --output_pkl %s --input_source %s" % (
             procScript,
-            self.configPickle,
-            self.configPickle,
-            inputSource.type_())
+            os.path.join(self.stepSpace.location, self.configPickle),
+            os.path.join(self.stepSpace.location, self.configPickle),
+            inputSourceType)
         self.scramRun(cmd)
 
         return
@@ -676,6 +684,9 @@ class SetupCMSSWPset(ScriptInterface):
         """
         self.logger.info("Executing SetupCMSSWPSet...")
         self.jobBag = self.job.getBaggage()
+        self.configPickle = getattr(self.step.data.application.command, "configurationPickle", "PSet.pkl")
+        self.psetFile = getattr(self.step.data.application.command, "configuration", "PSet.py")
+        self.scram = self.createScramEnv()
 
         scenario = getattr(self.step.data.application.configuration, "scenario", None)
         if scenario is not None and scenario != "":
@@ -746,7 +757,7 @@ class SetupCMSSWPset(ScriptInterface):
         # If not - apply the per job tweaks
         # If so - create an override TFC (like done in PA) and then modify thePSet accordingly
         if hasattr(self.step.data.input, "chainedProcessing") and self.step.data.input.chainedProcessing:
-            self.handleChainedProcessing()
+            self.handleChainedProcessingTweak()
         else:
             jobTweak = makeJobTweak(self.job, self.tweak)
 
@@ -788,23 +799,23 @@ class SetupCMSSWPset(ScriptInterface):
         # Check if we accept skipping bad files
         if hasattr(self.step.data.application.configuration, "skipBadFiles"):
             self.tweak.addParameter("process.source.skipBadFiles",
-                bool(self.step.data.application.configuration.skipBadFiles))
+                "customTypeCms.untracked.bool(%s)" % self.step.data.application.configuration.skipBadFiles)
 
         # Apply events per lumi section if available
         if hasattr(self.step.data.application.configuration, "eventsPerLumi"):
             self.tweak.addParameter("process.source.numberEventsInLuminosityBlock",
-                self.step.data.application.configuration.eventsPerLumi)
+                "customTypeCms.untracked.uint32(%s)" % self.step.data.application.configuration.eventsPerLumi)
 
         # limit run time if desired
         if hasattr(self.step.data.application.configuration, "maxSecondsUntilRampdown"):
             self.tweak.addParameter("process.maxSecondsUntilRampdown.input",
-                self.step.data.application.configuration.maxSecondsUntilRampdown)
+                "customTypeCms.untracked.PSet(input=cms.untracked.int32(%s)" % self.step.data.application.configuration.maxSecondsUntilRampdown)
 
         # accept an overridden TFC from the step
         if hasattr(self.step.data.application, 'overrideCatalog'):
             self.logger.info("Found a TFC override: %s", self.step.data.application.overrideCatalog)
             self.tweak.addParameter("process.source.overrideCatalog",
-                str(self.step.data.application.overrideCatalog))
+                "customTypeCms.untracked.string('%s')" % self.step.data.application.overrideCatalog)
 
         configFile = self.step.data.application.command.configuration
         workingDir = self.stepSpace.location
