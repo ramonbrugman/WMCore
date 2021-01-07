@@ -436,13 +436,42 @@ class SetupCMSSWPset(ScriptInterface):
         siteConfig = loadSiteLocalConfig()
         PhEDExNodeName = siteConfig.localStageOut["phedex-node"]
         self.logger.info("Running on site '%s', local PNN: '%s'", siteConfig.siteName, PhEDExNodeName)
+        jsonPileupConfig = os.path.join(self.stepSpace.location, "pileupconf.json")
+
+        # Load pileup json 
+        try:
+            with open(jsonPileupConfig) as jdata:
+                pileupDict = json.load(jdata)
+        except IOError:
+            m = "Could not read pileup JSON configuration file: '%s'" % jsonPileupConfig
+            raise RuntimeError(m)
+
+        # For MC, create a json with a list of files after dealing with PhEDEx/AAA logic
+        fileList = []
+        fileDict = {}
+        for pileupType in self.step.data.pileup.listSections_():
+            useAAA = True if getattr(self.jobBag, 'trustPUSitelists', False) else False
+            self.logger.info("Pileup set to read data remotely: %s", useAAA)
+            for blockName in sorted(pileupDict[pileupType].keys()):
+                blockDict = pileupDict[pileupType][blockName]
+                if PhEDExNodeName in blockDict["PhEDExNodeNames"] or useAAA:
+                    for fileLFN in blockDict["FileList"]:
+                        fileList.append(str(fileLFN))
+            fileDict[pileupType] = fileList
+        fileListJson = os.path.join(self.stepSpace.location, "fileList.json")
+        self.logger.info("Generating MC fileList json for CMSSW pileup script")
+        try:
+            with open(fileListJson, 'wb') as f:
+                json.dump(fileDict, f)
+        except Exception as ex:
+            self.logger.exception("Error writing out process filelist json:")
+            raise
 
         # @TODO: Get rid of this as soon as we are sure cmssw-wm-tools can be found
         # in all CMSSW release environments.
         # procScript = "cmssw_handle_pileup.py"
         procScript = os.path.join("/cvmfs/cms.cern.ch/slc7_amd64_gcc820/cms/cmssw-wm-tools/201113/bin", "cmssw_handle_pileup.py")
-        jsonPileupConfig = os.path.join(self.stepSpace.location, "pileupconf.json")
-
+        # @TODO: Add fileListJson as another input parameter for this script, once it is incorporated in cmssw
         cmd = "%s --input_pkl %s --output_pkl %s --pileup_dict %s" % (
             procScript,
             os.path.join(self.stepSpace.location, self.configPickle),
