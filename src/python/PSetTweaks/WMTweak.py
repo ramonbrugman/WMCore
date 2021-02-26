@@ -390,9 +390,9 @@ def makeTaskTweak(stepSection, result):
             if hasattr(stepSection.application.configuration, "pickledarguments"):
                 args = pickle.loads(stepSection.application.configuration.pickledarguments)
                 if 'globalTag' in args:
-                    result.addParameter("process.GlobalTag.globaltag", args['globalTag'])
+                    result.addParameter("process.GlobalTag.globaltag",  "customTypeCms.string('%s')" % args['globalTag'])
                 if 'globalTagTransaction' in args:
-                    result.addParameter("process.GlobalTag.DBParameters.transactionId", args['globalTagTransaction'])
+                    result.addParameter("process.GlobalTag.DBParameters.transactionId",  "customTypeCms.untracked.string('%s')" % args['globalTagTransaction'])
 
     return
 
@@ -419,7 +419,7 @@ def makeJobTweak(job, result):
             if job['mask'].get('FirstLumi', None) != None:
                 logging.info("Setting 'firstLuminosityBlock' attr to: %s", job['mask']['FirstLumi'])
                 result.addParameter("process.source.firstLuminosityBlock",
-                                    job['mask']['FirstLumi'])
+                                    "customTypeCms.untracked.uint32(%s)" % job['mask']['FirstLumi'])
             else:
                 # We don't have lumi information in the mask, raise an exception
                 raise WMTweakMaskError(job['mask'],
@@ -433,16 +433,16 @@ def makeJobTweak(job, result):
     logging.info("Adding %d files to 'fileNames' attr", len(primaryFiles))
     logging.info("Adding %d files to 'secondaryFileNames' attr", len(secondaryFiles))
     if len(primaryFiles) > 0:
-        result.addParameter("process.source.fileNames", primaryFiles)
+        result.addParameter("process.source.fileNames", "customTypeCms.untracked.vstring(%s)" % primaryFiles)
         if len(secondaryFiles) > 0:
-            result.addParameter("process.source.secondaryFileNames", secondaryFiles)
+            result.addParameter("process.source.secondaryFileNames", "customTypeCms.untracked.vstring(%s)" % secondaryFiles)
     elif not lheInput:
         # First event parameter should be set from whatever the mask says,
         # That should have the added protection of not going over 2^32 - 1
         # If there is nothing in the mask, then we fallback to the counter method
         if job['mask'].get('FirstEvent', None) != None:
             logging.info("Setting 'firstEvent' attr to: %s", job['mask']['FirstEvent'])
-            result.addParameter("process.source.firstEvent", job['mask']['FirstEvent'])
+            result.addParameter("process.source.firstEvent", "customTypeCms.untracked.uint32(%s)" % job['mask']['FirstEvent'])
         else:
             # No first event information in the mask, raise and error
             raise WMTweakMaskError(job['mask'],
@@ -455,7 +455,7 @@ def makeJobTweak(job, result):
     if maxEvents is None:
         maxEvents = -1
     logging.info("Setting 'maxEvents.input' attr to: %s", maxEvents)
-    result.addParameter("process.maxEvents.input", maxEvents)
+    result.addParameter("process.maxEvents", "customTypeCms.untracked.PSet(input=cms.untracked.int32(%s))"% maxEvents)
 
     # We don't want to set skip events for MonteCarlo jobs which have
     # no input files.
@@ -463,18 +463,18 @@ def makeJobTweak(job, result):
     if firstEvent != None and firstEvent >= 0 and (len(primaryFiles) > 0 or lheInput):
         if lheInput:
             logging.info("Setting 'skipEvents' attr to: %s", firstEvent - 1)
-            result.addParameter("process.source.skipEvents", firstEvent - 1)
+            result.addParameter("process.source.skipEvents", "customTypeCms.untracked.uint32(%s)" % (firstEvent - 1))
         else:
             logging.info("Setting 'skipEvents' attr to: %s", firstEvent)
-            result.addParameter("process.source.skipEvents", firstEvent)
+            result.addParameter("process.source.skipEvents", "customTypeCms.untracked.uint32(%s)" % firstEvent)
 
     firstRun = mask['FirstRun']
     if firstRun != None:
-        result.addParameter("process.source.firstRun", firstRun)
+        result.addParameter("process.source.firstRun", "customTypeCms.untracked.uint32(%s)" % firstRun)
     elif not len(primaryFiles):
         # Then we have a MC job, we need to set firstRun to 1
         logging.debug("MCFakeFile initiated without job FirstRun - using one.")
-        result.addParameter("process.source.firstRun", 1)
+        result.addParameter("process.source.firstRun", "customTypeCms.untracked.uint32(1)")
 
     runs = mask.getRunAndLumis()
     lumisToProcess = []
@@ -488,7 +488,7 @@ def makeJobTweak(job, result):
 
     if len(lumisToProcess) > 0:
         logging.info("Adding %d run/lumis mask to 'lumisToProcess' attr", len(lumisToProcess))
-        result.addParameter("process.source.lumisToProcess", lumisToProcess)
+        result.addParameter("process.source.lumisToProcess", "customTypeCms.untracked.VLuminosityBlockRange(%s)" % lumisToProcess)
 
     # install any settings from the per job baggage
     procSection = getattr(baggage, "process", None)
@@ -497,6 +497,12 @@ def makeJobTweak(job, result):
 
     baggageParams = decomposeConfigSection(procSection)
     for k, v in viewitems(baggageParams):
+        if type(v) == type(''):
+            v =  "customTypeCms.untracked.string(%s)" % v
+        elif type(v) == type(0):
+            v =  "customTypeCms.untracked.uint32(%s)" % v
+        elif type(v) == type([]):
+            v =  "customTypeCms.untracked.vstring(%s)" % v
         result.addParameter(k, v)
 
     return
@@ -509,9 +515,9 @@ def makeOutputTweak(outMod, job, result):
     Make a PSetTweak for the output module and job instance provided
 
     """
-    result = PSetTweak()
     # output filenames
     modName = str(getattr(outMod, "_internal_name"))
+    logging.info("modName = {0}".format(modName))
     fileName = "%s.root" % modName
 
     result.addParameter("process.%s.fileName" % modName, fileName)
@@ -523,6 +529,7 @@ def makeOutputTweak(outMod, job, result):
 
     # TODO: Nice standard way to meddle with the other parameters in the
     #      output module based on the settings in the section
+    logging.info("mod result = {0}".format(result.jsondictionary()))
 
     return
 
