@@ -30,8 +30,8 @@ class PyCurlManager(unittest.TestCase):
         Test fetch of several urls at once, one of the url relies on CERN SSO.
         """
         tfile = tempfile.NamedTemporaryFile()
-        url1 = "https://cmsweb.cern.ch/dbs/prod/global/DBSReader/help"
-        url2 = "https://cmsweb.cern.ch/dbs/prod/global/DBSReader/datatiers"
+        url1 = "https://cmsweb-prod.cern.ch/dbs/prod/global/DBSReader/help"
+        url2 = "https://cmsweb-prod.cern.ch/dbs/prod/global/DBSReader/datatiers"
         url3 = "https://cms-gwmsmon.cern.ch/prodview/json/site_summary"
         cern_sso_cookie(url3, tfile.name, self.cert, self.ckey)
         cookie = {url3: tfile.name}
@@ -50,10 +50,11 @@ class PyCurlManager(unittest.TestCase):
         # test RequestHandler
         url = "https://cms-gwmsmon.cern.ch/prodview/json/site_summary"
         params = {}
+        headers = {"Cache-Control": "no-cache"}
         tfile = tempfile.NamedTemporaryFile()
         cern_sso_cookie(url, tfile.name, self.cert, self.ckey)
         cookie = {url: tfile.name}
-        header, _ = self.mgr.request(url, params, cookie=cookie)
+        header, _ = self.mgr.request(url, params, headers, cookie=cookie)
         self.assertTrue(header.status, 200)
 
     def testContinue(self):

@@ -3,8 +3,6 @@ Unlike ReqMgr1 defining Request and RequestSchema classes,
 define just 1 class. Derived from Python dict and implementing
 necessary conversion and validation extra methods possibly needed.
 
-TODO/NOTE:
-    'inputMode' should be removed by now (2013-07)
 
     since arguments validation #4705, arguments which are later
         validated during spec instantiation and which are not
@@ -16,6 +14,8 @@ TODO/NOTE:
 
 """
 from __future__ import print_function, division
+from builtins import range, object
+from future.utils import viewitems, viewvalues, listvalues
 
 import re
 import time
@@ -58,6 +58,7 @@ def initialize_request_args(request, config):
     request["CouchDBName"] = config.couch_config_cache_db
 
     generateRequestName(request)
+    replaceDbsProdUrl(request)
 
 
 def _replace_cloned_args(clone_args, user_args):
@@ -73,6 +74,18 @@ def _replace_cloned_args(clone_args, user_args):
         else:
             clone_args[prop] = user_args[prop]
     return
+
+
+def replaceDbsProdUrl(requestArgs):
+    """
+    Function to update the DBS URL from the standard cmsweb.cern.ch
+    to cmsweb-prod.cern.ch, running in the k8s infra
+    :param requestArgs: dictionary with the request arguments
+    :return: same dictionary object (with updated dbs url)
+    """
+    # TODO: this url conversion below can be removed in one year from now, thus March 2022
+    if requestArgs.get("DbsUrl"):
+        requestArgs["DbsUrl"] = requestArgs["DbsUrl"].replace("cmsweb.cern.ch", "cmsweb-prod.cern.ch")
 
 
 def initialize_clone(requestArgs, originalArgs, argsDefinition, chainDefinition=None):
@@ -96,7 +109,7 @@ def initialize_clone(requestArgs, originalArgs, argsDefinition, chainDefinition=
         cloneArgs = originalArgs
     else:
         cloneArgs = {}
-        for topKey, topValue in originalArgs.iteritems():
+        for topKey, topValue in viewitems(originalArgs):
             # order of this if-else matters because Step1/Task1 is a known argument
             if re.match(chainPattern, topKey):
                 cloneArgs.setdefault(topKey, {})
@@ -111,6 +124,7 @@ def initialize_clone(requestArgs, originalArgs, argsDefinition, chainDefinition=
     # apply user override arguments at the end, such that it's validated at spec level
     incrementProcVer(cloneArgs, requestArgs)
     _replace_cloned_args(cloneArgs, requestArgs)
+    replaceDbsProdUrl(cloneArgs)
 
     return cloneArgs
 
@@ -196,7 +210,7 @@ class RequestInfo(object):
             # property which can't be task or stepchain property but in dictionary format
             exculdePropWithDictFormat = ["LumiList", "AgentJobInfo"]
             if prop not in exculdePropWithDictFormat and isinstance(defaultValue, dict):
-                return defaultValue.values()
+                return listvalues(defaultValue)
             else:
                 return defaultValue
 
@@ -226,7 +240,7 @@ class RequestInfo(object):
         If this request's RequestStatus is either "running-closed", "completed",
         return True, otherwise False
         """
-        for key, value in filterDict.iteritems():
+        for key, value in viewitems(filterDict):
             # special case checks where key is not exist in Request's Doc.
             # It is used whether AgentJobInfo is deleted or not for announced status
             if value == "CLEANED" and key == "AgentJobInfo":
@@ -268,7 +282,7 @@ class RequestInfo(object):
         DO NOT check if workflow status isn't among those status
         """
         if 'AgentJobInfo' in self.data:
-            for agentRequestInfo in self.data['AgentJobInfo'].values():
+            for agentRequestInfo in viewvalues(self.data['AgentJobInfo']):
                 if agentRequestInfo.get("status", {}):
                     return False
         # cannot determin whether AgentJobInfo is cleaned or not when 'AgentJobInfo' Key doesn't exist

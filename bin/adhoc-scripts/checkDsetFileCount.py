@@ -18,7 +18,7 @@ from WMCore.Services.Rucio.Rucio import Rucio
 RUCIO_ACCT = "wma_prod"
 RUCIO_HOST = "http://cms-rucio.cern.ch"
 RUCIO_AUTH = "https://cms-rucio-auth.cern.ch"
-DBS_URL = "https://cmsweb.cern.ch/dbs/prod/global/DBSReader/"
+DBS_URL = "https://cmsweb-prod.cern.ch/dbs/prod/global/DBSReader/"
 
 
 def loggerSetup(logLevel=logging.INFO):
@@ -43,7 +43,7 @@ def getFromRucio(dataset, logger):
     rucio = Rucio(acct=RUCIO_ACCT,
                   hostUrl=RUCIO_HOST,
                   authUrl=RUCIO_AUTH,
-                  configDict={'logger': logger, 'phedexCompatible': False})
+                  configDict={'logger': logger})
 
     result = dict()
     for block in rucio.getBlocksInContainer(dataset):

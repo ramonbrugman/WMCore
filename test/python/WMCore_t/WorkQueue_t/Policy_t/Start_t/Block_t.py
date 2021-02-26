@@ -416,7 +416,7 @@ class BlockTestCase(EmulatedUnitTestCase):
         for task in Tier1ReRecoWorkload.taskIterator():
             policyInstance(Tier1ReRecoWorkload, task)
             outputs = policyInstance.getDatasetLocations(
-                {'https://cmsweb.cern.ch/dbs/prod/global/DBSReader': Tier1ReRecoWorkload.listInputDatasets()})
+                {'https://cmsweb-prod.cern.ch/dbs/prod/global/DBSReader': Tier1ReRecoWorkload.listInputDatasets()})
             for dataset in outputs:
                 self.assertItemsEqual(outputs[dataset], ['T2_XX_SiteA', 'T2_XX_SiteB'])
         return
@@ -434,7 +434,7 @@ class BlockTestCase(EmulatedUnitTestCase):
             for unit in units:
                 pileupData = unit["PileupData"]
                 self.assertEqual(len(pileupData), 1)
-                self.assertItemsEqual(pileupData.values()[0], ['T2_XX_SiteA', 'T2_XX_SiteB', 'T2_XX_SiteC'])
+                self.assertItemsEqual(pileupData.values()[0], ['T2_XX_SiteA', 'T2_XX_SiteB'])
         return
 
     def testWithMaskedBlocks(self):

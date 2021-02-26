@@ -17,7 +17,6 @@ import threading
 import time
 from collections import defaultdict
 
-from Utils.Utilities import usingRucio
 from WMCore import Lexicon
 from WMCore.ACDC.DataCollectionService import DataCollectionService
 from WMCore.Database.CMSCouch import CouchInternalServerError, CouchNotFoundError
@@ -185,13 +184,12 @@ class WorkQueue(WorkQueueBase):
                 raise RuntimeError('Only blocks can be released on location')
 
         self.params.setdefault('rucioAccount', "wmcore_transferor")
-        # FIXME remove these attributes initialized to None
-        if usingRucio():
-            self.phedexService = None
-            self.rucio = Rucio(self.params['rucioAccount'], configDict=dict(logger=self.logger))
-        else:
-            self.rucio = None
-            self.phedexService = PhEDEx()
+
+        self.phedexService = None
+        self.rucio = Rucio(self.params['rucioAccount'],
+                           self.params['rucioUrl'], self.params['rucioAuthUrl'],
+                           configDict=dict(logger=self.logger))
+
 
         self.dataLocationMapper = WorkQueueDataLocationMapper(self.logger, self.backend,
                                                               phedex=self.phedexService,
@@ -683,13 +681,12 @@ class WorkQueue(WorkQueueBase):
         work = self.processInboundWork(inbound, throw=True)
         return len(work)
 
-    def addWork(self, requestName):
+    def addWork(self, requestName, rucioObj=None):
         """
         Check and add new elements to an existing running request,
         if supported by the start policy.
         """
         self.logger.info('addWork() checking "%s"', requestName)
-        inbound = None
         try:
             inbound = self.backend.getInboxElements(elementIDs=[requestName], loadSpec=True)
         except CouchNotFoundError:
@@ -699,7 +696,7 @@ class WorkQueue(WorkQueueBase):
 
         work = []
         if inbound:
-            work = self.processInboundWork(inbound, throw=True, continuous=True)
+            work = self.processInboundWork(inbound, throw=True, continuous=True, rucioObj=rucioObj)
         return len(work)
 
     def status(self, status=None, elementIDs=None,
@@ -852,7 +849,7 @@ class WorkQueue(WorkQueueBase):
 
         return len(work)
 
-    def closeWork(self, *workflows):
+    def closeWork(self, workflows, rucioObj=None):
         """
         Global queue service that looks for the inbox elements that are still running open
         and checks whether they should be closed already. If a list of workflows
@@ -863,6 +860,9 @@ class WorkQueue(WorkQueueBase):
           and the StartPolicy newDataAvailable function returns False.
         It also checks if new data is available and updates the inbox element
         """
+        # give preference to rucio object created by the CherryPy threads
+        if not rucioObj:
+            rucioObj = self.rucio
 
         if not self.backend.isAvailable():
             self.logger.warning('Backend busy or down: Can not close work at this time')
@@ -871,7 +871,9 @@ class WorkQueue(WorkQueueBase):
         if self.params['LocalQueueFlag']:
             return  # GlobalQueue-only service
 
-        if workflows:
+        if workflows and not isinstance(workflows, list):
+            workflowsToClose = [workflows]
+        elif workflows:
             workflowsToClose = workflows
         else:
             workflowsToCheck = self.backend.getInboxElements(OpenForNewData=True)
@@ -895,7 +897,7 @@ class WorkQueue(WorkQueueBase):
                         raise RuntimeError("WMSpec doesn't define policyName, current value: '%s'" % policyName)
 
                     policyInstance = startPolicy(policyName, self.params['SplittingMapping'],
-                                                 rucioAcct=self.params['rucioAccount'], logger=self.logger)
+                                                 rucioObj=rucioObj, logger=self.logger)
                     if not policyInstance.supportsWorkAddition():
                         continue
                     if policyInstance.newDataAvailable(topLevelTask, element):
@@ -1049,7 +1051,7 @@ class WorkQueue(WorkQueueBase):
         except Exception as ex:
             self.logger.error('Error syncing and canceling WQ elements. Details: %s', str(ex))
 
-    def _splitWork(self, wmspec, data=None, mask=None, inbound=None, continuous=False):
+    def _splitWork(self, wmspec, data=None, mask=None, inbound=None, continuous=False, rucioObj=None):
         """
         Split work from a parent into WorkQeueueElements.
 
@@ -1059,9 +1061,13 @@ class WorkQueue(WorkQueueBase):
 
         mask can be used to specify i.e. event range.
 
-        The inbound and continous parameters are used to split
+        The inbound and continuous parameters are used to split
         and already split inbox element.
         """
+        # give preference to rucio object created by the CherryPy threads
+        if not rucioObj:
+            rucioObj = self.rucio
+
         totalUnits = []
         # split each top level task into constituent work elements
         # get the acdc server and db name
@@ -1072,7 +1078,7 @@ class WorkQueue(WorkQueueBase):
                 raise RuntimeError("WMSpec doesn't define policyName, current value: '%s'" % policyName)
 
             policy = startPolicy(policyName, self.params['SplittingMapping'],
-                                 rucioAcct=self.params['rucioAccount'], logger=self.logger)
+                                 rucioObj=rucioObj, logger=self.logger)
             if not policy.supportsWorkAddition() and continuous:
                 # Can't split further with a policy that doesn't allow it
                 continue
@@ -1113,7 +1119,7 @@ class WorkQueue(WorkQueueBase):
                 'input_lumis': totalLumis,
                 'input_num_files': totalFiles}
 
-    def processInboundWork(self, inbound_work=None, throw=False, continuous=False):
+    def processInboundWork(self, inbound_work=None, throw=False, continuous=False, rucioObj=None):
         """Retrieve work from inbox, split and store
         If request passed then only process that request
         """
@@ -1138,7 +1144,7 @@ class WorkQueue(WorkQueueBase):
                 else:
                     work, rejectedWork, badWork = self._splitWork(inbound['WMSpec'], data=inbound['Inputs'],
                                                                   mask=inbound['Mask'], inbound=inbound,
-                                                                  continuous=continuous)
+                                                                  continuous=continuous, rucioObj=rucioObj)
 
                     # save inbound work to signal we have completed queueing
                     # if this fails, rerunning will pick up here

@@ -74,6 +74,10 @@ class StdBase(object):
             except Exception as ex:
                 raise WMSpecFactoryException("parameter %s: %s" % (arg, str(ex)))
 
+        # TODO: this replace can be removed in one year from now, thus March 2022
+        if hasattr(self, "dbsUrl"):
+            self.dbsUrl = self.dbsUrl.replace("cmsweb.cern.ch", "cmsweb-prod.cern.ch")
+
         return
 
     # static copy of the skim mapping
@@ -242,41 +246,6 @@ class StdBase(object):
         monitoring.PerformanceMonitor.hardTimeout = hardTimeout
         return task
 
-    # FIXME: this function is getting deprecated. Will be removed in March 2020
-    def reportWorkflowToDashboard(self, dashboardActivity):
-        """
-        _reportWorkflowToDashboard_
-        Gathers workflow information from the arguments and reports it to the
-        dashboard
-        """
-        try:
-            # Create a fake config
-            conf = ConfigSection()
-            conf.section_('DashboardReporter')
-            conf.DashboardReporter.dashboardHost = self.dashboardHost
-            conf.DashboardReporter.dashboardPort = self.dashboardPort
-
-            # Create the reporter
-            reporter = DashboardReporter(conf)
-
-            # Assemble the info
-            workflow = {}
-            workflow['name'] = self.workloadName
-            workflow['application'] = self.frameworkVersion
-            workflow['TaskType'] = dashboardActivity
-            # Let's try to build information about the inputDataset
-            dataset = 'DoesNotApply'
-            if hasattr(self, 'inputDataset'):
-                dataset = self.inputDataset
-            workflow['datasetFull'] = dataset
-            workflow['user'] = 'cmsdataops'
-
-            # Send the workflow info
-            reporter.addTask(workflow)
-        except Exception:
-            # This is not critical, if it fails just leave it be
-            logging.error("There was an error with dashboard reporting")
-
     def createWorkload(self):
         """
         _createWorkload_
@@ -297,7 +266,8 @@ class StdBase(object):
         workload.setPriority(self.priority)
         workload.setCampaign(self.campaign)
         workload.setRequestType(self.requestType)
-        workload.setDbsUrl(self.dbsUrl)
+        # TODO: this replace can be removed in one year from now, thus March 2022
+        workload.setDbsUrl(self.dbsUrl.replace("cmsweb.cern.ch", "cmsweb-prod.cern.ch"))
         workload.setPrepID(self.prepID)
         return workload
 
@@ -1038,7 +1008,7 @@ class StdBase(object):
                                             "validate": lambda x: x >= 0},
                      "GlobalTagConnect": {"null": True},
                      "LumiList": {"default": {}, "type": makeLumiList},
-                     "DbsUrl": {"default": "https://cmsweb.cern.ch/dbs/prod/global/DBSReader",
+                     "DbsUrl": {"default": "https://cmsweb-prod.cern.ch/dbs/prod/global/DBSReader",
                                 "null": True, "validate": checkDBSURL},
                      "DashboardHost": {"default": "cms-jobmon.cern.ch"},
                      "DashboardPort": {"default": 8884, "type": int,

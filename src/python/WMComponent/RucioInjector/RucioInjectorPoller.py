@@ -102,8 +102,7 @@ class RucioInjectorPoller(BaseWorkerThread):
         self.rucio = Rucio(acct=self.rucioAcct,
                            hostUrl=config.RucioInjector.rucioUrl,
                            authUrl=config.RucioInjector.rucioAuthUrl,
-                           configDict={'logger': self.logger,
-                                       'phedexCompatible': False})
+                           configDict={'logger': self.logger})
 
         # metadata dictionary information to be added to block/container rules
         # cannot be a python dictionary, but a JSON string instead
@@ -286,6 +285,10 @@ class RucioInjectorPoller(BaseWorkerThread):
         for item in unsubBlocks:
             if not self._isBlockTierAllowed(item['blockname']):
                 logging.debug("Component configured to skip block rule for: %s", item['blockname'])
+                continue
+            # first, check if the block has already been created in Rucio
+            if not self.rucio.didExist(item['blockname']):
+                logging.warning("Block: %s not yet in Rucio. Retrying later..", item['blockname'])
                 continue
             kwargs = dict(activity="Production Output", account=self.rucioAcct,
                           grouping="DATASET", comment="WMAgent automatic container rule",
@@ -518,6 +521,10 @@ class RucioInjectorPoller(BaseWorkerThread):
                 logging.info("Bypassing Production container Tape data placement for container: %s and RSE: %s",
                              container, rseName)
                 subscriptionsMade.append(subInfo['id'])
+                continue
+            # then check if the container has already been created in Rucio
+            if not self.rucio.didExist(container):
+                logging.warning("Container: %s not yet in Rucio. Retrying later..", container)
                 continue
 
             ruleKwargs = dict(ask_approval=False,

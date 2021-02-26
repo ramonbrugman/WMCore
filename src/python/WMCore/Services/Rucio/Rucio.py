@@ -10,6 +10,7 @@ from __future__ import division, print_function, absolute_import
 from builtins import str, object
 from future.utils import viewitems, viewvalues
 
+import json
 import logging
 import random
 from copy import deepcopy
@@ -136,9 +137,6 @@ class Rucio(object):
         self.rucioParams.setdefault('timeout', 600)
         self.rucioParams.setdefault('user_agent', 'wmcore-client')
 
-        # yield output compatible with the PhEDEx service class
-        self.phedexCompat = self.rucioParams.get("phedexCompatible", True)
-
         self.logger.info("WMCore Rucio initialization parameters: %s", self.rucioParams)
         self.cli = Client(rucio_host=hostUrl, auth_host=authUrl, account=acct,
                           ca_cert=self.rucioParams['ca_cert'], auth_type=self.rucioParams['auth_type'],
@@ -243,11 +241,11 @@ class Rucio(object):
         _getReplicaInfoForBlocks_
 
         Get block replica information.
-        It mimics the same API available in the PhEDEx Service module.
+        It used to mimic the same PhEDEx wrapper API, listing all the
+        current locations where the provided input data is.
 
         :kwargs: either a dataset or a block name has to be provided. Not both!
-        :return: a list of dictionaries with replica information; or a dictionary
-        compatible with PhEDEx.
+        :return: a list of dictionaries with replica information
         """
         kwargs.setdefault("scope", "cms")
 
@@ -275,21 +273,11 @@ class Rucio(object):
             if item['state'].upper() == 'AVAILABLE':
                 resultDict[item['name']].append(item['rse'])
 
-        if self.phedexCompat:
-            # then we need to convert it to a format like:
-            # {"phedex": {"block": [{"name": "block_A", "replica": [{"node": "nodeA"}, {"node": "nodeB"}]},
-            #                        etc etc
-            #                        }}
-            for blockName, rses in viewitems(resultDict):
-                replicas = [{"node": rse} for rse in rses]
-                result.append({"name": blockName, "replica": replicas})
-            result = {'phedex': {'block': result}}
-        else:
-            # then a list of dictionaries sounds right, e.g.:
-            # [{"name": "block_A", "replica": ["nodeA", "nodeB"]},
-            #  {"name": "block_B", etc etc}]
-            for blockName, rses in viewitems(resultDict):
-                result.append({"name": blockName, "replica": list(set(rses))})
+        # Finally, convert it to a list of dictionaries, like:
+        # [{"name": "block_A", "replica": ["nodeA", "nodeB"]},
+        #  {"name": "block_B", etc etc}]
+        for blockName, rses in viewitems(resultDict):
+            result.append({"name": blockName, "replica": list(set(rses))})
 
         return result
 
@@ -547,6 +535,8 @@ class Rucio(object):
         kwargs.setdefault('ask_approval', False)
         kwargs.setdefault('asynchronous', True)
         kwargs.setdefault('priority', 3)
+        if isinstance(kwargs.get('meta'), dict):
+            kwargs['meta'] = json.dumps(kwargs['meta'])
 
         if not isinstance(names, (list, set)):
             names = [names]
@@ -842,6 +832,19 @@ class Rucio(object):
             self.logger.error("Data identifier not found in Rucio: %s. Error: %s", didName, str(exc))
         return response
 
+    def didExist(self, didName, scope='cms'):
+        """
+        Provided a given DID, check whether it's already in the Rucio server.
+        Any kind of exception will return False (thus, data not yet in Rucio).
+        :param didName: a string with the DID name (container, block, or file)
+        :return: True if DID has been found, False otherwise
+        """
+        try:
+            response = self.cli.get_did(scope=scope, name=didName)
+        except Exception:
+            response = dict()
+        return response.get("name") == didName
+
     # FIXME we can likely delete this method (replaced by another implementation)
     def getDataLockedAndAvailable_old(self, **kwargs):
         """
@@ -1044,11 +1047,13 @@ class Rucio(object):
         # if we got here, then there is a third step to be done.
         # List every single block lock and check if the rule belongs to the WMCore system
         for blockName in result:
+            blockRSEs = set()
             for blockLock in self.cli.get_dataset_locks(scope, blockName):
                 if isTapeRSE(blockLock['rse']):
                     continue
                 if blockLock['state'] == 'OK' and blockLock['rule_id'] in multiRSERules:
-                    result[blockName].add(blockLock['rse'])
+                    blockRSEs.add(blockLock['rse'])
+            result[blockName] = finalRSEs | blockRSEs
         return result
 
     def getParentContainerRules(self, **kwargs):
