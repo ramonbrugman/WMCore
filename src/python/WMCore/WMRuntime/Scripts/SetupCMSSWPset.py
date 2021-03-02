@@ -145,7 +145,7 @@ class SetupCMSSWPset(ScriptInterface):
 
         if funcName == "merge":
             self.logger.info("useErrorDataset = {0}".format(getattr(self.jobBag, "useErrorDataset", False)))
-            if getattr(self.jobBag, "useErrorDataset", True):
+            if getattr(self.jobBag, "useErrorDataset", False):
                 cmd += " --useErrorDataset"
 
         self.scramRun(cmd)
@@ -203,16 +203,17 @@ class SetupCMSSWPset(ScriptInterface):
             msg = "Error loading output modules from process"
             raise AttributeError(msg)
 
-        tweak = PSetTweak()
         for outMod in outputModuleNames:
+            tweak = PSetTweak()
             self.logger.info("DEBUG output module = %s" % outMod)
-            tweak.addParameter("process.%s.dataset" % outMod, "customTypeCms.untracked.PSet()")
-            tweak.addParameter("process.%s.datatier" % outMod, "customTypeCms.untracked.string('')")
-            tweak.addParameter("process.%s.filterName" % outMod, "customTypeCms.untracked.string('')")
+            tweak.addParameter("process.options", "customTypeCms.untracked.PSet()")
+            tweak.addParameter("process.%s.dataset" % outMod, "customTypeCms.untracked.PSet(dataTier=cms.untracked.string(''), filterName=cms.untracked.string(''))")
+            self.applyPsetTweak(tweak, skipIfSet=True, cleanupTweak=True)
+            #tweak.addParameter("process.%s.dataset.dataTier" % outMod, "customTypeCms.untracked.string('')")
+            #tweak.addParameter("process.%s.dataset.filterName" % outMod, "customTypeCms.untracked.string('')")
             tweak.addParameter("process.%s.fileName" % outMod, "customTypeCms.untracked.string('')")
             tweak.addParameter("process.%s.logicalFileName" % outMod, "customTypeCms.untracked.string('')")
-
-        self.applyPsetTweak(tweak, skipIfSet=True)
+            self.applyPsetTweak(tweak, skipIfSet=True)
 
         return
 
