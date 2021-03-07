@@ -33,7 +33,7 @@ def factory(module, name):
     """
 
     class DummyClass:
-        def __init__(self, module, name, *args, **kwargs):
+        def __init__(self, module, name='', *args, **kwargs):
             self.__module = module
             self.__name = name
             self.__d = dict()
